@@ -21,9 +21,14 @@ function [past_squares_pos,new_square_pos,circ_pos] = buildSquares(xi,past_squar
 new_square_pos = xi';
 
 % add spheres
-new_circ_pos = placeSpheres(square_halfL,rho,new_square_pos,past_squares_pos); % don't need to shift by the latest cube_pos -- already done
+new_circ_pos = placeSpheres(square_halfL,rho,new_square_pos,past_squares_pos);
 circ_pos = [circ_pos, new_circ_pos];
 
 past_squares_pos = [past_squares_pos, new_square_pos];
+
+
+% prune squares?
+
+
 
 end

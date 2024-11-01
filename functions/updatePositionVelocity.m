@@ -1,5 +1,5 @@
-function [xtdt,vtdt,contacts] = updatePositionVelocity(xt,ut,dt,circ_pos,circ_rad,neighbors,beta,tumbler)
-% [xtdt,vtdt,contacts] = updatePositionVelocity(xt,ut,dt,sph_pos,sph_rad,neighbors,v0,tumbler)
+function [xtdt,vtdt,contacts,circInds,phi_tdt] = updatePositionVelocity(xt,ut,dt,circ_pos_i,circ_rad,beta,tumbler,phi_t)
+% [xtdt,vtdt,contacts,circInds] = updatePositionVelocity(xt,ut,dt,sph_pos,sph_rad,neighbors,v0,tumbler)
 %
 % Updates the cell's position, velocity, and contact state in the next dt.
 %
@@ -7,26 +7,29 @@ function [xtdt,vtdt,contacts] = updatePositionVelocity(xt,ut,dt,circ_pos,circ_ra
 % xt: The cell's position at the end of the previous time step. 1 by d vector, where d is the number of dimensions
 % ut: The cell's heading at the end of the previous time step. 1 by d vector, where d is the number of dimensions
 % dt: Simulation time step. scalar
-% circ_pos: Positions of the obstacle centers. d by Nircles matrix, where d is the number of dimensions
+% circ_pos_i: Positions of nearby obstacle centers. d by Nircles matrix, where d is the number of dimensions
 % circ_rad: Obstacle radius. Should always be 1. scalar
-% neighbors: Vector of the indices of obstacles that are close to the cell. N by 1 vector
 % beta: Dimensionless cell swimming speed. scalar
 % tumbler: Whether the cell is tumbling this time step or not. logical scalar
+% phi_t: Signed distance from the cell position to the surfaces of all obstacles. 2 by Ncircles vector.
 %
 % Outputs:
 % xtdt: The cell's position at the end of this time step. 1 by d vector, where d is the number of dimensions
 % vtdt: The cell's velocity at the end of this time step. 1 by d vector, where d is the number of dimensions
 % contacts: The cell's contact state at the end of this time step. 0 indicates swimming in bulk, 1 indicates contact with one obstacle, 2 indicates contact with two obstacles. scalar
+% circInds: Indices of the circles with which the cell is in contact. 1 by n vector, where n = contacts. Empty vector when contacts = 0.
+% phi_tdt: Signed distance from the cell position to the surfaces of all obstacles at the end of the time step. 2 by Ncircles vector.
 %
 % Henry H. Mattingly, November 2023
 
 tol = 1000*eps*max(1,norm(xt)); % tolerance
 d=2;
-xt = xt';
-ut = ut';
+xt = xt(:); % check; was xt = xt'
+ut = ut(:); % check; was xt = xt'
+% size of rt?
+circInds = [];
 
-circ_pos_i = circ_pos(:,neighbors); % centroids of nearby spheres
-nclose = numel(neighbors);
+nclose = size(circ_pos_i,2);
 
 dt_r = dt;
 xNext = xt;
@@ -37,7 +40,7 @@ makeFigs = 0;
 if makeFigs
 
 figure;hold on
-h=viscircles(circ_pos_i',circ_rad);
+h=viscircles(circ_pos_i',circ_rad*ones(size(circ_pos_i,2),1));
 h.Children(1).Color = 'k';
 plot(xt(1),xt(2),'co') % cell position
 quiver(xt(1),xt(2),ut(1),ut(2),1,'filled') % cell heading
@@ -48,15 +51,22 @@ h=gca;
 h.XGrid='on';
 h.YGrid='on';
 
+xlim([xt(1)-2,xt(1)+2])
+ylim([xt(2)-2,xt(2)+2])
+
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % start by checking state: how many obstacles in contact? 
-[contacts,circInd] = getContacts(xt,ut,circ_pos_i,circ_rad,tol);
+% slow
+[contacts,circInds,~] = getContacts(xt,ut,circ_pos_i,circ_rad,tol,phi_t);
+circInd = circInds;
 
 if tumbler
     xtdt = xt';
     vtdt = [0,0];
+    phi_tdt = phi_t;
+
     return
 end
 
@@ -106,8 +116,11 @@ end
 xtdt = xNext;
 vtdt = vNext;
 
-rtdt = repmat(xtdt,1,nclose)-circ_pos_i;
-phi_tdt = sum(rtdt.^2,1)' - circ_rad^2; % compute distances from cell position to the surfaces of all nearby obstacles
+% slow
+[contacts,circInds,~,phi_tdt] = getContacts(xtdt,ut,circ_pos_i,circ_rad,tol);
+
+% rtdt = repmat(xtdt,1,nclose)-circ_pos_i;
+% phi_tdt = sum(rtdt.^2,1)' - circ_rad^2; % compute distances from cell position to the surfaces of all nearby obstacles
 
 % for plotting %%%%%%%%%%%%%%%%
 if makeFigs
@@ -142,7 +155,7 @@ end
 
 %% state 0 update and related
 function [xNext,vNext,contacts,dt_r,circInd] = update0(xLast,ut,beta,dt_r,circ_pos_i,circ_rad,circInd,tol)
-nclose = size(circ_pos_i,2);
+% nclose = size(circ_pos_i,2);
 circInd = []; %% 
 
 % compute time to next collision with all obstacles
@@ -173,8 +186,8 @@ else
     circInd = [];
 end
 
-rNext = repmat(xNext,1,nclose) - circ_pos_i;
-phiNext = sum(rNext.^2,1)'-circ_rad^2;
+% rNext = repmat(xNext,1,nclose) - circ_pos_i;
+% phiNext = sum(rNext.^2,1)'-circ_rad^2;
 
 end
 
@@ -184,21 +197,13 @@ d=2;
 
 y = repmat(xt,1,nclose)-circ_pos_i;
 discrs = dot(repmat(ut,1,nclose),y,1).^2 - (sum(y.^2,1) - circ_rad^2);
-d1 = -dot(repmat(ut,1,nclose),y,1) - sqrt(discrs); % must be negative root -- haven't hit yet, so closer intersection will be the - root
-d2 = -dot(repmat(ut,1,nclose),y,1) + sqrt(discrs); % must be negative root -- haven't hit yet, so closer intersection will be the - root
+discrs(discrs<0) = inf;
+d1 = -dot(repmat(ut,1,nclose),y,1) - sqrt(discrs); 
+d2 = -dot(repmat(ut,1,nclose),y,1) + sqrt(discrs); 
 
-% exclude case when cell is on a circle but pointing away
-rt = repmat(xt,1,nclose) - circ_pos_i;
-nt = rt./repmat(sqrt(sum(rt.^2,1)),d,1); % d
 
-dun = dot(repmat(ut,1,nclose), nt);
-
-d1(dun>-tol) = Inf; % -100*?
-d2(dun>-tol) = Inf;
 d1(d1<0) = Inf;
 d2(d2<0) = Inf;
-d1(imag(d1)~=0) = Inf;
-d2(imag(d2)~=0) = Inf;
 dContacts = min(d1,d2);
 
 tContacts = dContacts/beta;
@@ -230,12 +235,12 @@ function [xNext,vNext,contacts,dt_r,circInd] = update1(xLast,ut,beta,dt_r,circIn
 nclose = size(circ_pos_i,2);
 
 % compute time to next collision with all obstacles
-[thContacts,tContacts,dthContacts] = getSurfaceTimeToContact(xLast,ut,beta,circInd,circ_pos_i,tol);
+[thContacts,tContacts,dthContacts] = getSurfaceTimeToContact(xLast,ut,beta,circInd,circ_pos_i,circ_rad,tol);
 tContacts(isnan(tContacts)) = Inf;
 tContacts(circInd) = Inf; %% exclude current sphere -- not a new encounter
 
 % exclude based on normals at contact point -- ie previously contacted
-% circle
+% circle. 
 if any(tContacts<=dt_r & tContacts>=0)
     checkInds = find(tContacts<=dt_r & tContacts>=0);
     for i = 1:length(checkInds)
@@ -291,22 +296,59 @@ elseif mni==2 % escape
     contacts = 0;
     vNext = beta*ut;
 
+    %%%%%%%%%%%
+%     figure;hold on
+%     viscircles(circ_pos_i',ones(size(circ_pos_i,2),1),'color','k')
+%     viscircles(circ_pos_i(:,circInd)',1,'color','r')
+%     quiver(xNext(1),xNext(2),ut(1),ut(2))
+%     xlim([xNext(1)-1,xNext(1)+1])
+%     ylim([xNext(2)-1,xNext(2)+1])
+% 
+%     keyboard
+%     close
+
 elseif mni==3 % collision
+
+    circInd0=circInd;
+
     % if there is a collision in that time, find where/when it happens.
-    [circInd,xNext,tContact,vNext,contacts] = getSurfaceContact(thContacts,tContacts,dthContacts,ut,beta,circInd,circ_pos_i,tol);
+    [circInd,xNext,tContact,vNext,contacts] = getSurfaceContact(thContacts,tContacts,dthContacts,ut,beta,circInd,circ_pos_i,circ_rad,tol);
     dt_r = dt_r - tContact;
 
+    %%%%%%%%%%
+%     figure;hold on
+%     viscircles(circ_pos_i',ones(size(circ_pos_i,2),1),'color','k')
+%     viscircles(circ_pos_i(:,circInd0)',1,'color','r')
+%     viscircles(circ_pos_i(:,circInd)',1,'color','g')
+%     quiver(xNext(1),xNext(2),ut(1),ut(2))
+%     axis equal
+%     xlim([xNext(1)-1,xNext(1)+1])
+%     ylim([xNext(2)-1,xNext(2)+1])
+% 
+%     line([xNext(1),circ_pos_i(1,circInd0)],[xNext(2),circ_pos_i(2,circInd0)],'color','k');
+%     line([xNext(1),circ_pos_i(1,circInd)],[xNext(2),circ_pos_i(2,circInd)],'color','k');
+% 
+%     plot(xLast(1),xLast(2),'ko')
+% 
+%     contacts
+% 
+%     keyboard
+%     close
+    
+
 end
 
-% check for collision with a new sphere before escape/non-escape
-rNext = repmat(xNext,1,nclose) - circ_pos_i;
-phiNext = sum(rNext.^2,1)'-circ_rad^2;
+% dcheck = dot(ut,xNext-xLast);
+% if dcheck<0
+%     keyboard
+% end
+
 
 end
 
 
 
-function [thContacts,tContacts,dthContacts] = getSurfaceTimeToContact(xLast,ut,beta,circInd1,circ_pos_i,tol)
+function [thContacts,tContacts,dthContacts] = getSurfaceTimeToContact(xLast,ut,beta,circInd1,circ_pos_i,circ_rad,tol)
 
 % finding a point where two spheres intersect
 nclose = size(circ_pos_i,2);
@@ -332,7 +374,7 @@ dth2 = th2-th0;
 
 % now want the one that goes in direction thDir and has smallest magnitude.
 % correct for direction.
-dth1 = thDir*dth1; dth1 = mod(dth1+tol,2*pi)-tol;
+dth1 = thDir*dth1; dth1 = mod(dth1+tol,2*pi)-tol; 
 dth2 = thDir*dth2; dth2 = mod(dth2+tol,2*pi)-tol;
 
 % remove invalid points
@@ -345,15 +387,28 @@ dth2(dth2>pi/2) = Inf;
 dthContacts = min(dth1,dth2);
 thContacts = mod(th0 + thDir*dthContacts,2*pi);
 
+% more reliable way of detecting whether a new encounter is occurring %% added
+if any(~isnan(thContacts))
+    inds = find(~isnan(thContacts));
+    for k = 1:length(inds)
+        xContact_k = circ_pos_i(:,circInd1) + circ_rad*[cos(thContacts(inds(k)));sin(thContacts(inds(k)))]; % with circ_rad=1...
+        [contact_k,circInd] = getContacts(xContact_k,ut,circ_pos_i(:,[inds,circInd1]),circ_rad,tol);
+        if contact_k==1 && circInd~=k% && ~any(isnan(xContact_k))
+            thContacts(inds(k))=Inf;
+            dthContacts(inds(k))=Inf;
+        end
+    end
+end
+
 % invert solution for s = cos(phi-theta)
 s0 = cos(phi-th0);
 sContacts = cos(phi-thContacts);
 tContacts = abs(1/(2*beta) * log( (s0+1)/(s0-1) * (sContacts - 1)./(sContacts + 1)));
-tContacts(thContacts==Inf) = Inf;
+tContacts(thContacts==Inf | isnan(thContacts)) = Inf;
 
 end
 
-function [circInd2,xContact,tContact,vContact,contacts] = getSurfaceContact(thContacts,tContacts,dthContacts,ut,beta,circInd1,circ_pos_i,tol)
+function [circInd2,xContact,tContact,vContact,contacts] = getSurfaceContact(thContacts,tContacts,dthContacts,ut,beta,circInd1,circ_pos_i,circ_rad,tol)
 
 [~,circInd2] = min(dthContacts); % will regret this?
 tContact = tContacts(circInd2);
@@ -362,118 +417,13 @@ thContact = thContacts(circInd2);
 xContact = [cos(thContact);sin(thContact)] + circ_pos_i(:,circInd1);
 
 % does the cell keep sliding along the next sphere, or does it stop?
-n1 = xContact - circ_pos_i(:,circInd1);
-n2 = xContact - circ_pos_i(:,circInd2);
+[contacts,circInd] = getContacts(xContact,ut,circ_pos_i,circ_rad,tol);
 
-dsphs = sqrt(sum((circ_pos_i(:,circInd1) - circ_pos_i(:,circInd2)).^2,1));
-
-n1=-n1;
-n2=-n2;
-
-d12 = dot(n1,n2);
-du1 = dot(ut,n1);
-du2 = dot(ut,n2);
-
-if dsphs<sqrt(2) % NEW
-    c = [0;du2];
-
-    % check result
-    vt = ut  - [n1,n2]*c;
-
-    dv1 = dot(vt,n1);
-    if dv1<0 % for inward pointing normal
-        contacts = 1;
-    else
-        c = [1,d12;d12,1]\[du1;du2]; 
-        contacts = 2;
-    end
+if contacts==2
+    vContact=0;
 else
-    % dot with inward pointing normals
-    % v = u - c1 n1 - c2 n2
-    % v.n1 = u.n1 - c1 n1.n1 - c2 n2.n1 = 0
-    % v.n2 = u.n2 - c1 n1.n2 - c2 n2.n2 = 0
-    % u.n1 - c1 - c2 n2.n1 = 0
-    % u.n2 - c1 n1.n2 - c2 = 0
-    % u.n1 = [1, n2.n1] * [c1;c2]
-    % u.n2 = [n2.n1, 1] * [c1;c2]
-
-    c = [1,d12;d12,1]\[du1;du2];
-
-    contacts = 2;
-end
-
-% get speed
-vt = beta*(ut - [n1,n2]*c);
-
-vContact = vt;
-
-end
-
-
-%% get state
-function [contacts,circInd] = getContacts(xt,ut,circ_pos_i,circ_rad,tol)
-nclose = size(circ_pos_i,2);
-
-rt = repmat(xt,1,nclose) - circ_pos_i;
-phi_t = sum(rt.^2,1)'-circ_rad^2;
-contacts = sum(abs(phi_t)<=tol);
-circInd = [];
-
-% verify initial state
-if contacts == 1
-    circInd = find(abs(phi_t)<=tol);
-
-    % check that the cell really is in state 1 -- ie check that it's
-    % pointing into a sphere -- relevant only to the first iteration
-    ni = -(xt - circ_pos_i(:,circInd));
-%     ni = ri/norm(ri); % unnecessary for unit circles
-
-    % dot with inward pointing normal
-    if dot(ut,ni)<=0
-        % if <=0, then actually in state 0
-        contacts = 0;
-        circInd = [];
-    end
-
-elseif contacts == 2
-    
-    sphInds = find(abs(phi_t)<=tol);
-    n1 = xt - circ_pos_i(:,sphInds(1));
-    n2 = xt - circ_pos_i(:,sphInds(2));
-
-    % dot with inward pointing normals
-    n1=-n1;
-    n2=-n2;
-    du1 = dot(ut,n1);
-    du2 = dot(ut,n2);
-
-    if du1<=0 && du2<=0
-        contacts = 0; % facing away from spheres
-
-    else
-        % remove projection of u onto each sphere normal
-        v1 = ut - n1*du1;
-        v2 = ut - n2*du2;
-
-        % dot resulting velocity with other sphere's inward normal
-        cross_dots = [dot(v1,n2), dot(v2,n1)];
-
-        if any(cross_dots<0)
-            % if either dot product <0, cell has a way out and is in state 1
-            % find which sphere it slides along next
-            if dot(v1,n2)<0
-                circInd = sphInds(1); % then cell points away from n2 (inward normal to sphere 2), and thus can move on sphere 1
-            else
-                circInd = sphInds(2); % opposite case
-            end
-            contacts = 1;
-        else
-            contacts = 2;
-        end
-
-    end
+    n = xContact - circ_pos_i(:,circInd);
+    vContact = beta*(ut - dot(ut,n)*n);
 end
 
 end
-
-

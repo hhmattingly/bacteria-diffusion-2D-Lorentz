@@ -27,8 +27,55 @@ new_circ_pos = 2*square_halfL*(rand(d,Ncirc_new)-1/2)+new_square_pos;
 
 % check if any lie inside other squares
 if ~isempty(past_squares_pos)
-    rmInds = any(all(abs(repmat(new_circ_pos,[1,1,Npast])-repmat(permute(past_squares_pos,[1,3,2]),[1,Ncirc_new,1]))<square_halfL,1),3);
+    % slow
+%     tic
+%     rmInds = any(all(abs(repmat(new_circ_pos,[1,1,Npast])-repmat(permute(past_squares_pos,[1,3,2]),[1,Ncirc_new,1]))<square_halfL,1),3);
+%     toc
+
+    
+%     tic
+    rmInds = getRmInds(new_square_pos,past_squares_pos,new_circ_pos,Npast,Ncirc_new,square_halfL);
+%     toc
+
+%     tic
+%     rmInds = false(1,Ncirc_new);
+%     for k = 1:Ncirc_new
+%         temp = repmat(new_circ_pos(:,k),1,Npast) - past_squares_pos;
+%         rmInds(k) = any(all(abs(temp)<square_halfL,1),2);
+%     end
+%     toc
+
     new_circ_pos(:,rmInds) = [];
 end
 
+% this could be improved by identifying the minimal set of squares that
+% fully cover the space explored
+
+end
+
+
+function rmInds = getRmInds(new_square_pos,past_squares_pos,new_circ_pos,Npast,Ncirc_new,square_halfL)
+
+    % find close potential squares only
+    D = sqrt(sum((repmat(new_square_pos,1,Npast) - past_squares_pos).^2,1));
+    close_squares = find(D<2.1*sqrt(2)*square_halfL); %2?
+    nclose = length(close_squares);
+
+    %
+    rmInds = any(all(abs(repmat(new_circ_pos,[1,1,nclose])-repmat(permute(past_squares_pos(:,close_squares),[1,3,2]),[1,Ncirc_new,1]))<square_halfL,1),3);
+
+%     figure;hold on
+%     viscircles(new_circ_pos',1,'color','k');
+%     for i = 1:size(past_squares_pos,2)
+%         rectangle('Position',[past_squares_pos(:,i)'-square_halfL*ones(1,2),2*square_halfL*ones(1,2)]);
+%     end
+%     for i = 1:length(close_squares)
+%         rectangle('Position',[past_squares_pos(:,close_squares(i))'-square_halfL*ones(1,2),2*square_halfL*ones(1,2)]);
+%     end
+% 
+%     viscircles(new_circ_pos(:,rmInds)',1,'color','r');
+
+%     if any(rmInds==0)
+%         keyboard
+%     end
 end

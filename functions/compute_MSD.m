@@ -57,10 +57,5 @@ for j = 1:length(eval_inds)
     
 end
 
-% msd_se = msd_std;
-
-
-% disp('done.')
-
 end
 

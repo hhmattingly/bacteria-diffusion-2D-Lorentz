@@ -20,16 +20,24 @@ function buildsquare = checkWhetherBuildSquare(xi,past_squares_pos,square_halfL,
 
 % check whether each cell is close to any cube edge
 Nsquares = size(past_squares_pos,2);
-inside_inds = find(all(abs(repmat(xi',1,Nsquares) - past_squares_pos)<square_halfL));
 
-% refine to just the closest center
-[~,mni] = min(sqrt(sum((repmat(xi',1,length(inside_inds))-past_squares_pos(:,inside_inds)).^2,1)));
+% mni = getMin(xi,Nsquares,past_squares_pos,square_halfL);
+
+% [~,mni]=pdist2(past_squares_pos',xi,'squaredeuclidean','smallest',1);
+
+[~,mni] = min(sum((repmat(xi',1,Nsquares)-past_squares_pos).^2,1));
 
 % now find the closest wall
-center_dists = abs(xi'-past_squares_pos(:,inside_inds(mni)));
+center_dist = abs(xi'-past_squares_pos(:,mni));
 
 % output
-buildsquare = any(center_dists > (square_halfL-(1+r)-2*beta*dt));
+buildsquare = any(center_dist > (square_halfL-(1+r)-2*beta*dt));
 
 
 end
+
+% function mni = getMin(xi,Nsquares,past_squares_pos,square_halfL)
+%     inside_inds = find(all(abs(repmat(xi',1,Nsquares) - past_squares_pos)<square_halfL));
+%     [~,mni] = min((sum((repmat(xi',1,length(inside_inds))-past_squares_pos(:,inside_inds)).^2,1)));
+%     mni = inside_inds(mni);
+% end
