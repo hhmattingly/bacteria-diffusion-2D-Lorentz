@@ -169,7 +169,7 @@ for rep = 1:Nreps
 
             %% Visualize outputs
 
-            for cell_num = 1:5%0%Ncells%cell_ind %find(~closed,1,'first')
+            for cell_num = 1:5
             
                 options.showRectangles=0;
                 options.showGrid=0;
