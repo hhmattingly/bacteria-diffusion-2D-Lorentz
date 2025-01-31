@@ -1,4 +1,4 @@
-%% Main script for simulating a run-and-tumble particle in a 2D environment with circular obstacles.
+%% Main script for simulating a run-and-tumble particle in a 2D environment with circular obstacles of radius R = 1.
 % Henry H. Mattingly, August 2024
 
 addpath(['.' filesep 'functions'])
